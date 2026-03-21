@@ -1,3 +1,5 @@
+#!/home/juro/.venv/bin/python
+
 import LCD_1in44
 import time
 
