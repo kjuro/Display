@@ -13,4 +13,5 @@ LCD.LCD_Clear()
 
 image = Image.open(image_path)
 LCD.LCD_ShowImage(image, 0, 0)
-time.sleep(5)
+time.sleep(3)
+LCD.module_exit()
