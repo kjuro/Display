@@ -74,16 +74,17 @@ def main():
     menu_top = 18
     menu_bottom = lcd.height - 14
     visible_count = (menu_bottom - menu_top) // item_height
-    prev_up = prev_down = prev_key1 = prev_key3 = 1
+    prev_up = prev_down = prev_key1 = prev_press = prev_key3 = 1
 
     draw_menu(lcd, draw, image, MENU_ITEMS, selected, scroll_offset)
 
     try:
         while True:
-            up   = lcd.digital_read(lcd.GPIO_KEY_UP_PIN)
-            down = lcd.digital_read(lcd.GPIO_KEY_DOWN_PIN)
-            key1 = lcd.digital_read(lcd.GPIO_KEY1_PIN)
-            key3 = lcd.digital_read(lcd.GPIO_KEY3_PIN)
+            up    = lcd.digital_read(lcd.GPIO_KEY_UP_PIN)
+            down  = lcd.digital_read(lcd.GPIO_KEY_DOWN_PIN)
+            key1  = lcd.digital_read(lcd.GPIO_KEY1_PIN)
+            press = lcd.digital_read(lcd.GPIO_KEY_PRESS_PIN)
+            key3  = lcd.digital_read(lcd.GPIO_KEY3_PIN)
 
             redraw = False
 
@@ -102,7 +103,8 @@ def main():
                 elif selected == 0:
                     scroll_offset = 0
                 redraw = True
-            if key1 == 1 and prev_key1 == 0:
+            ok = (key1 == 1 and prev_key1 == 0) or (press == 1 and prev_press == 0)
+            if ok:
                 item = MENU_ITEMS[selected]
                 if item == "Exit":
                     break
@@ -117,6 +119,7 @@ def main():
             prev_up = up
             prev_down = down
             prev_key1 = key1
+            prev_press = press
             prev_key3 = key3
 
             if redraw:

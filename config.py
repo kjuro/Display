@@ -28,6 +28,7 @@ import spidev
 import time
 import logging
 import numpy as np
+import RPi.GPIO as GPIO
 from gpiozero import *
 
 #GPIO define
@@ -120,9 +121,13 @@ class RaspberryPi:
             self.SPI.close()
         
         logging.debug("gpio cleanup...")
+        self.Brightness(0)
         self.digital_write(self.GPIO_RST_PIN, 1)
         self.digital_write(self.GPIO_DC_PIN, 0)   
         self.GPIO_BL_PIN.close()
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(24, GPIO.OUT)
+        GPIO.output(24, GPIO.LOW)
         time.sleep(0.001)
 
 ### END OF FILE ###
