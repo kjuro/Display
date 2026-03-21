@@ -1,10 +1,7 @@
 #!/home/juro/.venv/bin/python
 
 import RPi.GPIO as GPIO
+import LCD_1in44
 
 GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(24, GPIO.OUT)
-GPIO.output(24, GPIO.HIGH)  # Turn on backlight
-GPIO.cleanup()
-
+LCD_1in44.LCD.On()

@@ -28,6 +28,7 @@
 import config
 import time
 import numpy as np
+import RPi.GPIO as GPIO
 
 LCD_1IN44 = 1
 LCD_1IN8 = 0
@@ -243,7 +244,7 @@ class LCD(config.RaspberryPi):
 			return -1
 		
 		#Turn on the backlight
-		self.bl_DutyCycle(100)
+		self.Brightness(100)
 		
 		#Hardware reset
 		self.LCD_Reset()
@@ -294,6 +295,19 @@ class LCD(config.RaspberryPi):
 		self.digital_write(self.GPIO_DC_PIN, True)
 		for i in range(0,len(_buffer),4096):
 			self.spi_writebyte(_buffer[i:i+4096])
+
+	@staticmethod
+	def Off():
+		GPIO.setmode(GPIO.BCM)
+		GPIO.setup(24, GPIO.OUT)
+		GPIO.output(24, GPIO.LOW)
+
+	@staticmethod
+	def On():
+		GPIO.setwarnings(False)
+		GPIO.setmode(GPIO.BCM)
+		GPIO.setup(24, GPIO.OUT)
+		GPIO.output(24, GPIO.HIGH)
 
 	def LCD_ShowImage(self,Image,Xstart,Ystart):
 		if (Image == None):

@@ -1,4 +1,5 @@
-# -*- coding:utf-8 -*-
+#!/home/juro/.venv/bin/python
+
 import LCD_1in44
 
 from PIL import Image,ImageDraw,ImageFont,ImageColor

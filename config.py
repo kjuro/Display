@@ -53,7 +53,7 @@ class RaspberryPi:
         self.GPIO_RST_PIN= self.gpio_mode(rst,self.OUTPUT)
         self.GPIO_DC_PIN = self.gpio_mode(dc,self.OUTPUT)
         self.GPIO_BL_PIN = self.gpio_pwm(bl)
-        self.bl_DutyCycle(0)
+        self.Brightness(0)
         
         #init GPIO
         # for P4:
@@ -102,7 +102,7 @@ class RaspberryPi:
         if self.SPI!=None :
             self.SPI.writebytes(data)
 
-    def bl_DutyCycle(self, duty):
+    def Brightness(self, duty):
         self.GPIO_BL_PIN.value = duty / 100
         
     def bl_Frequency(self,freq):# Hz
