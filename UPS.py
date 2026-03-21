@@ -1,3 +1,5 @@
+#!/home/juro/.venv/bin/python
+
 import smbus
 import time
 
