@@ -6,10 +6,12 @@ import time
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 from show_time import action as show_time_action
+from shutdown import action as shutdown_action
 
 # Register all actions here
 ACTIONS = [
     show_time_action,
+    shutdown_action,
 ]
 
 EXIT_LABEL = "Exit"
