@@ -5,15 +5,15 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 cat > /tmp/lcd-boot.service <<EOF
 [Unit]
-Description=Show image on LCD at boot
+Description=LCD menu at boot
 After=multi-user.target
 
 [Service]
-ExecStart=${DIR}/show-image.py sky.bmp
+ExecStart=${DIR}/main.py
 WorkingDirectory=${DIR}
 User=juro
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
@@ -26,7 +26,7 @@ DefaultDependencies=no
 Before=shutdown.target
 
 [Service]
-ExecStart=${DIR}/show-image.py time.bmp
+ExecStart=${DIR}/show_image.py time.bmp
 WorkingDirectory=${DIR}
 User=juro
 Type=oneshot
@@ -42,5 +42,5 @@ sudo systemctl enable lcd-boot.service
 sudo systemctl enable lcd-shutdown.service
 
 echo "Services installed and enabled."
-echo "  Boot:     lcd-boot.service (sky.bmp)"
+echo "  Boot:     lcd-boot.service (main.py)"
 echo "  Shutdown: lcd-shutdown.service (time.bmp)"
