@@ -17,16 +17,20 @@ class BatteryStatusAction(Action):
         image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
         draw = ImageDraw.Draw(image)
 
-        prev_key3 = 0
+        def key3_pressed():
+            return lcd.digital_read(lcd.GPIO_KEY3_PIN) == 1
+
         while True:
-            key3 = lcd.digital_read(lcd.GPIO_KEY3_PIN)
-            if key3 == 1 and prev_key3 == 0:
+            if key3_pressed():
                 return
-            prev_key3 = key3
 
             bus_voltage = ina219.getBusVoltage_V()
             current = ina219.getCurrent_mA()
             power = ina219.getPower_W()
+
+            if key3_pressed():
+                return
+
             percent = (bus_voltage - 3) / 1.2 * 100
             percent = max(0, min(100, percent))
 
@@ -67,7 +71,11 @@ class BatteryStatusAction(Action):
             draw.text((10, lcd.height - 13), "KEY3: Back", fill="YELLOW")
 
             lcd.LCD_ShowImage(image, 0, 0)
-            time.sleep(1)
+
+            for _ in range(20):
+                if key3_pressed():
+                    return
+                time.sleep(0.05)
 
 
 action = BatteryStatusAction()

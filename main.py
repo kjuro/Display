@@ -66,6 +66,9 @@ def main():
     lcd.LCD_ShowImage(splash, 0, 0)
     time.sleep(3)
 
+    # Show time until any button is pressed
+    show_time_action.execute(lcd)
+
     # Build menu: action titles + Exit
     actions_by_title = {a.title: a for a in ACTIONS}
     menu_items = [a.title for a in ACTIONS] + [EXIT_LABEL]

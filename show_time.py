@@ -31,12 +31,24 @@ class ShowTimeAction(Action):
         image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
         draw = ImageDraw.Draw(image)
 
-        prev_key3 = 0
+        ALL_BUTTONS = [
+            lcd.GPIO_KEY_UP_PIN,
+            lcd.GPIO_KEY_DOWN_PIN,
+            lcd.GPIO_KEY_LEFT_PIN,
+            lcd.GPIO_KEY_RIGHT_PIN,
+            lcd.GPIO_KEY1_PIN,
+            lcd.GPIO_KEY2_PIN,
+            lcd.GPIO_KEY3_PIN,
+            lcd.GPIO_KEY_PRESS_PIN,
+        ]
+        prev = {pin: lcd.digital_read(pin) for pin in ALL_BUTTONS}
+
         while True:
-            key3 = lcd.digital_read(lcd.GPIO_KEY3_PIN)
-            if key3 == 1 and prev_key3 == 0:
-                return
-            prev_key3 = key3
+            for pin in ALL_BUTTONS:
+                val = lcd.digital_read(pin)
+                if val == 1 and prev[pin] == 0:
+                    return
+                prev[pin] = val
 
             now = time.strftime("%H:%M:%S")
             date = time.strftime("%d.%m.%Y")
