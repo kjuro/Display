@@ -5,17 +5,17 @@ import time
 
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 
-MENU_ITEMS = [
-    "Show Info",
-    "Show Time",
-    "Show Sky",
-    "Brightness",
-    "Settings",
-    "About",
-    "Exit",
+from show_time import action as show_time_action
+
+# Register all actions here
+ACTIONS = [
+    show_time_action,
 ]
 
-def draw_menu(lcd, draw, image, items, selected, scroll_offset):
+EXIT_LABEL = "Exit"
+
+
+def draw_menu(lcd, draw, image, menu_items, selected, scroll_offset):
     draw.rectangle((0, 0, lcd.width, lcd.height), fill="BLACK")
 
     # Title bar
@@ -34,8 +34,8 @@ def draw_menu(lcd, draw, image, items, selected, scroll_offset):
 
     # Draw visible items
     y = menu_top
-    for i in range(scroll_offset, min(scroll_offset + visible_count, len(items))):
-        item = items[i]
+    for i in range(scroll_offset, min(scroll_offset + visible_count, len(menu_items))):
+        item = menu_items[i]
         if i == selected:
             draw.rectangle((2, y, lcd.width - 2, y + item_height - 2), fill="WHITE")
             draw.text((8, y + 1), "> " + item, fill="BLACK")
@@ -46,19 +46,11 @@ def draw_menu(lcd, draw, image, items, selected, scroll_offset):
     # Scroll indicators
     if scroll_offset > 0:
         draw.text((lcd.width - 12, menu_top), "^", fill="YELLOW")
-    if scroll_offset + visible_count < len(items):
+    if scroll_offset + visible_count < len(menu_items):
         draw.text((lcd.width - 12, menu_bottom - item_height), "v", fill="YELLOW")
 
     lcd.LCD_ShowImage(image, 0, 0)
 
-def show_screen(lcd, title, text):
-    image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, 0, lcd.width, 16), fill="BLUE")
-    draw.text((10, 2), title, fill="WHITE")
-    draw.text((10, 30), text, fill="WHITE")
-    draw.text((10, lcd.height - 13), "KEY3: Back", fill="YELLOW")
-    lcd.LCD_ShowImage(image, 0, 0)
 
 def main():
     lcd = LCD_1in44.LCD()
@@ -69,6 +61,10 @@ def main():
     splash = Image.open("sky.bmp")
     lcd.LCD_ShowImage(splash, 0, 0)
     time.sleep(3)
+
+    # Build menu: action titles + Exit
+    actions_by_title = {a.title: a for a in ACTIONS}
+    menu_items = [a.title for a in ACTIONS] + [EXIT_LABEL]
 
     image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
     draw = ImageDraw.Draw(image)
@@ -81,7 +77,7 @@ def main():
     visible_count = (menu_bottom - menu_top) // item_height
     prev_up = prev_down = prev_key1 = prev_press = prev_key3 = 1
 
-    draw_menu(lcd, draw, image, MENU_ITEMS, selected, scroll_offset)
+    draw_menu(lcd, draw, image, menu_items, selected, scroll_offset)
 
     try:
         while True:
@@ -95,14 +91,14 @@ def main():
 
             # Buttons: 0 = released, 1 = pressed (from key_demo.py)
             if up == 1 and prev_up == 0:
-                selected = (selected - 1) % len(MENU_ITEMS)
+                selected = (selected - 1) % len(menu_items)
                 if selected < scroll_offset:
                     scroll_offset = selected
-                elif selected == len(MENU_ITEMS) - 1:
-                    scroll_offset = max(0, len(MENU_ITEMS) - visible_count)
+                elif selected == len(menu_items) - 1:
+                    scroll_offset = max(0, len(menu_items) - visible_count)
                 redraw = True
             if down == 1 and prev_down == 0:
-                selected = (selected + 1) % len(MENU_ITEMS)
+                selected = (selected + 1) % len(menu_items)
                 if selected >= scroll_offset + visible_count:
                     scroll_offset = selected - visible_count + 1
                 elif selected == 0:
@@ -110,15 +106,11 @@ def main():
                 redraw = True
             ok = (key1 == 1 and prev_key1 == 0) or (press == 1 and prev_press == 0)
             if ok:
-                item = MENU_ITEMS[selected]
-                if item == "Exit":
+                item = menu_items[selected]
+                if item == EXIT_LABEL:
                     break
-                show_screen(lcd, item, "Running: " + item)
-                # Wait for KEY3 press to go back
-                while lcd.digital_read(lcd.GPIO_KEY3_PIN) == 0:
-                    time.sleep(0.05)
-                while lcd.digital_read(lcd.GPIO_KEY3_PIN) == 1:
-                    time.sleep(0.05)
+                action = actions_by_title[item]
+                action.execute(lcd)
                 redraw = True
 
             prev_up = up
@@ -128,7 +120,7 @@ def main():
             prev_key3 = key3
 
             if redraw:
-                draw_menu(lcd, draw, image, MENU_ITEMS, selected, scroll_offset)
+                draw_menu(lcd, draw, image, menu_items, selected, scroll_offset)
 
             time.sleep(0.05)
 
