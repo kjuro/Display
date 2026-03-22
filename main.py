@@ -65,6 +65,11 @@ def main():
     lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
     lcd.LCD_Clear()
 
+    # Show splash image for 3 seconds
+    splash = Image.open("sky.bmp")
+    lcd.LCD_ShowImage(splash, 0, 0)
+    time.sleep(3)
+
     image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
     draw = ImageDraw.Draw(image)
 
