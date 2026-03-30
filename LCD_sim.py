@@ -13,7 +13,7 @@ Key mapping:
 
 import pygame
 
-SCALE = 4
+SCALE = 2
 LCD_WIDTH = 128
 LCD_HEIGHT = 128
 
@@ -50,7 +50,7 @@ class SimLCD:
         self._screen = pygame.display.set_mode(
             (LCD_WIDTH * SCALE, LCD_HEIGHT * SCALE)
         )
-        pygame.display.set_caption("LCD 1.44\" Simulator")
+        pygame.display.set_caption("LCD Simulator")
 
     def LCD_Clear(self):
         if self._screen:
