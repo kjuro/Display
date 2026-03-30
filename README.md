@@ -15,8 +15,8 @@ Scripts for controlling a 1.44" LCD on Raspberry Pi Zero.
 
 ```bash
 ./on.py
-./show-image.py              # shows sky.bmp
-./show-image.py time.bmp     # shows time.bmp
+./show-image.py                    # shows images/sky.bmp
+./show-image.py images/time.bmp    # shows images/time.bmp
 ./off.py
 ```
 

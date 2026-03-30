@@ -26,7 +26,7 @@ DefaultDependencies=no
 Before=shutdown.target
 
 [Service]
-ExecStart=${DIR}/show_image.py time.bmp
+ExecStart=${DIR}/show_image.py images/time.bmp
 WorkingDirectory=${DIR}
 User=juro
 Type=oneshot

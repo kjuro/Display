@@ -5,7 +5,7 @@ import time
 import LCD_1in44
 from PIL import Image
 
-image_path = sys.argv[1] if len(sys.argv) > 1 else 'sky.bmp'
+image_path = sys.argv[1] if len(sys.argv) > 1 else 'images/sky.bmp'
 
 LCD = LCD_1in44.LCD()
 LCD.LCD_Init(LCD_1in44.SCAN_DIR_DFT)

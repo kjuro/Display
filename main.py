@@ -59,34 +59,35 @@ def draw_menu(lcd, draw, image, menu_items, selected, scroll_offset):
 def main():
     lcd = LCD_1in44.LCD()
     lcd.LCD_Init(LCD_1in44.SCAN_DIR_DFT)
-    lcd.LCD_Clear()
-
-    # Show splash image for 3 seconds
-    splash = Image.open("sky.bmp")
-    lcd.LCD_ShowImage(splash, 0, 0)
-    time.sleep(3)
-
-    # Show time until any button is pressed
-    show_time_action.execute(lcd)
-
-    # Build menu: action titles + Exit
-    actions_by_title = {a.title: a for a in ACTIONS}
-    menu_items = [a.title for a in ACTIONS] + [EXIT_LABEL]
-
-    image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
-    draw = ImageDraw.Draw(image)
-
-    selected = 0
-    scroll_offset = 0
-    item_height = 16
-    menu_top = 18
-    menu_bottom = lcd.height - 14
-    visible_count = (menu_bottom - menu_top) // item_height
-    prev_up = prev_down = prev_key1 = prev_press = prev_key3 = 1
-
-    draw_menu(lcd, draw, image, menu_items, selected, scroll_offset)
 
     try:
+        lcd.LCD_Clear()
+
+        # Show splash image for 3 seconds
+        splash = Image.open("images/sky.bmp")
+        lcd.LCD_ShowImage(splash, 0, 0)
+        time.sleep(3)
+
+        # Show time until any button is pressed
+        show_time_action.execute(lcd)
+
+        # Build menu: action titles + Exit
+        actions_by_title = {a.title: a for a in ACTIONS}
+        menu_items = [a.title for a in ACTIONS] + [EXIT_LABEL]
+
+        image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
+        draw = ImageDraw.Draw(image)
+
+        selected = 0
+        scroll_offset = 0
+        item_height = 16
+        menu_top = 18
+        menu_bottom = lcd.height - 14
+        visible_count = (menu_bottom - menu_top) // item_height
+        prev_up = prev_down = prev_key1 = prev_press = prev_key3 = 1
+
+        draw_menu(lcd, draw, image, menu_items, selected, scroll_offset)
+
         while True:
             up    = lcd.digital_read(lcd.GPIO_KEY_UP_PIN)
             down  = lcd.digital_read(lcd.GPIO_KEY_DOWN_PIN)
