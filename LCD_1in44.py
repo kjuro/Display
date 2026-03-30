@@ -25,10 +25,21 @@
  # THE SOFTWARE.
  #
 
-import config
 import time
-import numpy as np
-import RPi.GPIO as GPIO
+
+try:
+    import config
+    import numpy as np
+    import RPi.GPIO as GPIO
+    _SIMULATOR = False
+except (ImportError, RuntimeError):
+    _SIMULATOR = True
+    # Provide stubs so the class definition below still parses
+    import types as _types
+    config = _types.ModuleType('config')
+    config.RaspberryPi = object
+    np = None
+    GPIO = None
 
 LCD_1IN44 = 1
 LCD_1IN8 = 0
@@ -325,3 +336,6 @@ class LCD(config.RaspberryPi):
 		self.digital_write(self.GPIO_DC_PIN, True)
 		for i in range(0,len(pix),4096):
 			self.spi_writebyte(pix[i:i+4096])
+
+if _SIMULATOR:
+	from LCD_sim import SimLCD as LCD
