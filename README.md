@@ -8,7 +8,7 @@ Scripts for controlling a 1.44" LCD on Raspberry Pi Zero.
 - **off.py** — Turn off LCD backlight
 - **show-image.py** — Show an image on the LCD (defaults to `sky.bmp`)
 - **main.py** — Demo: draws shapes, text, and cycles through images
-- **black.py** — Fill display with black
+- **show_black.py** — Fill display with black
 - **install.sh** — Install systemd services for boot/shutdown images
 
 ## Usage
