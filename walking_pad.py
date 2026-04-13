@@ -2,17 +2,17 @@
 #
 # Walking Pad action — requires: pip install bleak
 #
-# WalkingPad BLE protocol (KingSmith / WalkingPad A1/R1/C2 series):
-#   Notify/Write service : 0000fe01-0000-1000-8000-00805f9b34fb
+# WalkingPad BLE protocol (KingSmith KS-BLC2):
+#   Service              : 0000fe00-0000-1000-8000-00805f9b34fb
+#   Notify characteristic: 0000fe01-0000-1000-8000-00805f9b34fb
 #   Write characteristic : 0000fe02-0000-1000-8000-00805f9b34fb
-#   Status query cmd     : f7 a2 00 00 00 a2 fd
-#   Status response      : f8 a2 <state> <speed*10> <mode> <dist_hi> <dist_lo>
-#                          <time_hi> <time_lo> <steps_hi> <steps_lo> ... fd
-#     state : 0=idle, 1=running, 7=standby
+#   Command              : f7 a2 <cmd> <param> <checksum> fd  (6 bytes)
+#   Status response      : f8 a2 <state> <speed*10> ?? <time:3> <dist:3> <steps:3> ...
+#     state : 2=running, 5=standby
 #     speed : byte / 10  → km/h
-#     dist  : (hi<<8|lo) / 100  → km
-#     time  : (hi<<8|lo)  → seconds
-#     steps : (hi<<8|lo)
+#     time  : UInt24 seconds
+#     dist  : UInt24 / 100  → km
+#     steps : UInt24
 
 import os
 import asyncio
@@ -47,12 +47,29 @@ FONT_SMALL = _load_font(9)
 # ---------------------------------------------------------------------------
 NOTIFY_UUID = "0000fe01-0000-1000-8000-00805f9b34fb"
 WRITE_UUID  = "0000fe02-0000-1000-8000-00805f9b34fb"
-CMD_STATUS  = bytes([0xf7, 0xa2, 0x00, 0x00, 0x00, 0xa2, 0xfd])
+# 6-byte command: [0xF7, 0xA2, cmd, param, checksum, 0xFD]
+# checksum = (0xA2 + cmd + param) % 256
+# cmd 0x00 = query status
+# cmd 0x01 = change speed (param: speed * 10, 0 = stop)
+# cmd 0x04 = start belt   (param: 1 = start at configured start speed)
+CMD_STATUS = bytes([0xf7, 0xa2, 0x00, 0x00, 0xa2, 0xfd])
+CMD_START  = bytes([0xf7, 0xa2, 0x04, 0x01, 0xa7, 0xfd])
+CMD_STOP   = bytes([0xf7, 0xa2, 0x01, 0x00, 0xa3, 0xfd])
+
+SPEED_MIN = 1.0   # km/h  (device minimum)
+SPEED_MAX = 6.0   # km/h
+
+
+def _make_speed_cmd(speed_kmh: float) -> bytes:
+    """Build a set-speed command (opcode 0x01)."""
+    param = round(max(0.0, speed_kmh) * 10)
+    checksum = (0xa2 + 0x01 + param) % 256
+    return bytes([0xf7, 0xa2, 0x01, param, checksum, 0xfd])
 
 # Device name fragments to match (case-insensitive)
 PAD_NAME_HINTS = ("walkingpad", "ks-", "walking pad", "treadmill")
 
-STATE_LABELS = {0: "idle", 1: "running", 7: "standby"}
+STATE_LABELS = {1: "running", 5: "standby"}
 
 
 # ---------------------------------------------------------------------------
@@ -82,13 +99,13 @@ class PadStatus:
 
 def _parse_notification(data: bytes, status: PadStatus):
     """Parse a WalkingPad BLE notification packet into status."""
-    if len(data) < 11 or data[0] != 0xf8 or data[1] != 0xa2:
+    if len(data) < 14 or data[0] != 0xf8 or data[1] != 0xa2:
         return
     status.state    = data[2]
     status.speed    = data[3] / 10.0
-    status.distance = ((data[5] << 8) | data[6]) / 100.0
-    status.elapsed  = (data[7] << 8) | data[8]
-    status.steps    = (data[9] << 8) | data[10]
+    status.elapsed  = (data[5] << 16) | (data[6] << 8) | data[7]
+    status.distance = ((data[8] << 16) | (data[9] << 8) | data[10]) / 100.0
+    status.steps    = (data[11] << 16) | (data[12] << 8) | data[13]
     status.raw      = data
 
 
@@ -120,17 +137,10 @@ class WalkingPadAction(Action):
     async def _async_main(self, lcd):
         from bleak import BleakScanner, BleakClient
 
-        # --- 1. Scan and print all devices to console -------------------
-        self._show_message(lcd, "Scanning BLE...", "", "check console")
-        print("\n--- Scanning for Bluetooth devices (5 s) ---")
+        # --- 1. Scan ---------------------------------------------------
+        self._show_message(lcd, "Scanning BLE...", "", "")
 
         devices = await BleakScanner.discover(timeout=5.0)
-        devices_sorted = sorted(devices, key=lambda d: d.name or "")
-
-        print(f"Found {len(devices_sorted)} device(s):")
-        for d in devices_sorted:
-            print(f"  {d.address}  {d.name or '(unknown)'}")
-        print("--------------------------------------------\n")
 
         # --- 2. Find walking pad by name hint ---------------------------
         pad_device = None
@@ -140,12 +150,10 @@ class WalkingPadAction(Action):
                 break
 
         if pad_device is None:
-            print("No WalkingPad device found in scan results.")
             self._show_message(lcd, "WalkingPad", "not found", "KEY3: back")
             self.wait_for_key3(lcd)
             return
 
-        print(f"Connecting to: {pad_device.name}  [{pad_device.address}]")
         self._show_message(lcd, "Connecting...", pad_device.name or "", pad_device.address)
 
         # --- 3. Connect and stream data ---------------------------------
@@ -156,42 +164,79 @@ class WalkingPadAction(Action):
 
         try:
             async with BleakClient(pad_device.address) as client:
-                print(f"Connected to {pad_device.name}")
                 await client.start_notify(NOTIFY_UUID, _on_notify)
+                await client.write_gatt_char(WRITE_UUID, CMD_STATUS, response=False)
 
                 image = Image.new("RGB", (lcd.width, lcd.height), "BLACK")
                 draw  = ImageDraw.Draw(image)
 
                 exit_event = asyncio.Event()
 
-                async def _watch_key3():
-                    """Poll KEY3 every 50 ms and signal exit_event on press."""
-                    prev = lcd.digital_read(lcd.GPIO_KEY3_PIN)
+                async def _watch_keys():
+                    """Poll all keys every 50 ms."""
+                    prev_k1 = prev_up = prev_dn = prev_k3 = 0
                     while not exit_event.is_set():
-                        cur = lcd.digital_read(lcd.GPIO_KEY3_PIN)
-                        if cur == 1 and prev == 0:
+                        k1 = lcd.digital_read(lcd.GPIO_KEY1_PIN)
+                        up = lcd.digital_read(lcd.GPIO_KEY_UP_PIN)
+                        dn = lcd.digital_read(lcd.GPIO_KEY_DOWN_PIN)
+                        k3 = lcd.digital_read(lcd.GPIO_KEY3_PIN)
+
+                        if k1 == 1 and prev_k1 == 0:
+                            if status.state == 1:  # running → stop
+                                try:
+                                    await client.write_gatt_char(WRITE_UUID, CMD_STOP, response=False)
+                                except Exception:
+                                    pass
+                            else:  # stopped → start
+                                try:
+                                    await client.write_gatt_char(WRITE_UUID, CMD_START, response=False)
+                                except Exception:
+                                    pass
+
+                        if up == 1 and prev_up == 0 and status.state == 1:
+                            new_speed = min(SPEED_MAX, round(status.speed + 0.5, 1))
+                            try:
+                                await client.write_gatt_char(WRITE_UUID, _make_speed_cmd(new_speed), response=False)
+                            except Exception:
+                                pass
+
+                        if dn == 1 and prev_dn == 0 and status.state == 1:
+                            new_speed = max(SPEED_MIN, round(status.speed - 0.5, 1))
+                            try:
+                                await client.write_gatt_char(WRITE_UUID, _make_speed_cmd(new_speed), response=False)
+                            except Exception:
+                                pass
+
+                        if k3 == 1 and prev_k3 == 0:
+                            self._show_message(lcd, "Exiting...", "", "")
                             exit_event.set()
                             return
-                        prev = cur
+
+                        prev_k1, prev_up, prev_dn, prev_k3 = k1, up, dn, k3
                         await asyncio.sleep(0.05)
 
-                key_task = asyncio.create_task(_watch_key3())
+                key_task = asyncio.create_task(_watch_keys())
 
                 while not exit_event.is_set():
-                    # Request a fresh status update
                     try:
-                        await client.write_gatt_char(WRITE_UUID, CMD_STATUS)
+                        await client.write_gatt_char(WRITE_UUID, CMD_STATUS, response=False)
                     except Exception:
                         pass
 
-                    self._draw_status(lcd, draw, image, status, pad_device.name or "WalkingPad")
-                    await asyncio.sleep(0.8)
+                    if status.raw is None:
+                        self._show_waiting(lcd, pad_device.name or "WalkingPad")
+                    else:
+                        self._draw_status(lcd, draw, image, status, pad_device.name or "WalkingPad")
+
+                    try:
+                        await asyncio.wait_for(exit_event.wait(), timeout=0.8)
+                    except asyncio.TimeoutError:
+                        pass
 
                 key_task.cancel()
                 await client.stop_notify(NOTIFY_UUID)
 
         except Exception as exc:
-            print(f"BLE error: {exc}")
             self._show_message(lcd, "BLE Error", str(exc)[:20], "KEY3: back")
             self.wait_for_key3(lcd)
 
@@ -229,9 +274,9 @@ class WalkingPadAction(Action):
         # Device name (small, near bottom)
         draw.text((4, H - 22), device_name[:20], font=FONT_SMALL, fill="#555555")
 
-        # Footer
+        # Footer — show controls
         draw.rectangle((0, H - 12, W, H), fill="#1a5276")
-        draw.text((4, H - 11), "KEY3: back", font=FONT_SMALL, fill="WHITE")
+        draw.text((4, H - 11), "K1:\u25ae/\u25b6  \u25b2\u25bc:spd  K3:back", font=FONT_SMALL, fill="WHITE")
 
         lcd.LCD_ShowImage(image, 0, 0)
 
@@ -246,6 +291,24 @@ class WalkingPadAction(Action):
         draw.text((4, 24), line1, font=FONT_LABEL, fill="WHITE")
         draw.text((4, 42), line2, font=FONT_LABEL, fill="#aaaaaa")
         draw.text((4, 58), line3, font=FONT_SMALL,  fill="#aaaaaa")
+
+        draw.rectangle((0, H - 12, W, H), fill="#1a5276")
+        draw.text((4, H - 11), "KEY3: back", font=FONT_SMALL, fill="WHITE")
+
+        lcd.LCD_ShowImage(image, 0, 0)
+
+    def _show_waiting(self, lcd, device_name: str):
+        W, H = lcd.width, lcd.height
+        image = Image.new("RGB", (W, H), "BLACK")
+        draw  = ImageDraw.Draw(image)
+
+        draw.rectangle((0, 0, W, 15), fill="#1a5276")
+        draw.text((4, 2), "Walking Pad", font=FONT_TITLE, fill="WHITE")
+
+        draw.text((4, 24), "Connected", font=FONT_LABEL, fill="#27ae60")
+        draw.text((4, 40), device_name[:20], font=FONT_SMALL, fill="#aaaaaa")
+        draw.text((4, 58), "Start belt to", font=FONT_LABEL, fill="#f39c12")
+        draw.text((4, 74), "see data...", font=FONT_LABEL, fill="#f39c12")
 
         draw.rectangle((0, H - 12, W, H), fill="#1a5276")
         draw.text((4, H - 11), "KEY3: back", font=FONT_SMALL, fill="WHITE")
