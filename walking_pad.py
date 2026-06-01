@@ -140,7 +140,12 @@ class WalkingPadAction(Action):
         # --- 1. Scan ---------------------------------------------------
         self._show_message(lcd, "Scanning BLE...", "", "")
 
-        devices = await BleakScanner.discover(timeout=5.0)
+        try:
+            devices = await BleakScanner.discover(timeout=5.0)
+        except Exception as exc:
+            self._show_message(lcd, "Bluetooth error", str(exc)[:20], "KEY3: back")
+            self.wait_for_key3(lcd)
+            return
 
         # --- 2. Find walking pad by name hint ---------------------------
         pad_device = None
@@ -190,6 +195,8 @@ class WalkingPadAction(Action):
                             else:  # stopped → start
                                 try:
                                     await client.write_gatt_char(WRITE_UUID, CMD_START, response=False)
+                                    await asyncio.sleep(0.5)
+                                    await client.write_gatt_char(WRITE_UUID, _make_speed_cmd(3.0), response=False)
                                 except Exception:
                                     pass
 
