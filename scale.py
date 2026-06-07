@@ -245,6 +245,9 @@ class ScaleAction(Action):
 
             # ── live display loop ─────────────────────────────────────────────
             prev_k3 = 0
+            tr_r = br_r = tl_r = bl_r = None  # freshest sensor raw values
+            display_weight = 0.0     # 1-decimal kg shown on screen (slow-updated)
+            last_weight_update = 0.0
             while True:
                 k3 = lcd.digital_read(lcd.GPIO_KEY3_PIN)
                 if k3 == 1 and prev_k3 == 0:
@@ -258,27 +261,44 @@ class ScaleAction(Action):
                     except OSError:
                         break
 
-                intr.settimeout(0.3)
-                try:
-                    data = intr.recv(23)
-                except (TimeoutError, socket.timeout):
-                    continue
-                except OSError:
+                # Drain ALL queued packets; keep only the freshest sensor frame.
+                # This avoids accumulating a backlog while the LCD is being written.
+                intr.settimeout(0.0)
+                got_frame = False
+                conn_lost = False
+                for _ in range(30):  # cap to prevent infinite loop
+                    try:
+                        d = intr.recv(23)
+                    except BlockingIOError:
+                        break  # nothing more queued right now
+                    except socket.timeout:
+                        break
+                    except OSError:
+                        conn_lost = True
+                        break
+                    if not d:
+                        conn_lost = True
+                        break
+                    if len(d) >= 2 and d[1] == 0x20:
+                        try:
+                            intr.send(bytes([0xa2, 0x15, 0x00]))
+                        except OSError:
+                            pass
+                    elif len(d) >= 12 and d[1] == 0x32:
+                        # Overwrite with the newer reading each iteration
+                        tr_r = (d[4]  << 8) | d[5]
+                        br_r = (d[6]  << 8) | d[7]
+                        tl_r = (d[8]  << 8) | d[9]
+                        bl_r = (d[10] << 8) | d[11]
+                        got_frame = True
+
+                if conn_lost:
                     break
 
-                if len(data) >= 2 and data[1] == 0x20:
-                    try:
-                        intr.send(bytes([0xa2, 0x15, 0x00]))
-                    except OSError:
-                        pass
+                if not got_frame:
+                    # No fresh frame yet; yield briefly and retry
+                    time.sleep(0.02)
                     continue
-                if len(data) < 12 or data[1] != 0x32:
-                    continue
-
-                tr_r = (data[4]  << 8) | data[5]
-                br_r = (data[6]  << 8) | data[7]
-                tl_r = (data[8]  << 8) | data[9]
-                bl_r = (data[10] << 8) | data[11]
 
                 tr = max(0.0, (tr_r - tare[0]) * scale_factor)
                 br = max(0.0, (br_r - tare[1]) * scale_factor)
@@ -286,7 +306,13 @@ class ScaleAction(Action):
                 bl = max(0.0, (bl_r - tare[3]) * scale_factor)
                 total = tr + br + tl + bl
 
-                self._draw_live(lcd, draw, image, W, H, total, tr, br, tl, bl)
+                # Update the displayed weight at most once per second
+                now = time.time()
+                if now - last_weight_update >= 1.0:
+                    display_weight = round(total, 1)
+                    last_weight_update = now
+
+                self._draw_live(lcd, draw, image, W, H, total, display_weight, tr, br, tl, bl)
 
         finally:
             for sock in (ctrl, intr):
@@ -297,63 +323,79 @@ class ScaleAction(Action):
                         pass
 
     @staticmethod
-    def _draw_live(lcd, draw, image, W, H, total, tr, br, tl, bl):
+    def _draw_live(lcd, draw, image, W, H, total, display_weight, tr, br, tl, bl):
         """
-        Render the live weight + balance visualisation.
+        Full-screen balance visualisation.
 
         Layout (128 × 128):
-          y  0-14  : blue title bar "Scale"
-          y 16-37  : total weight in large font
-          y 40-118 : balance box with cross-hair and red balance dot
-          y 120-128: footer hint
+          Box fills the whole screen (1 px inset border).
+          Horizontal cross-hair at mid-height with a yellow dot showing weight
+          on a 0-150 kg scale.  Integer weight centred in the top half.
+          Vertical cross-hair at mid-width.
+          Red dot shows balance point.
         """
         draw.rectangle((0, 0, W, H), fill="BLACK")
 
-        # Title bar
-        draw.rectangle((0, 0, W, 14), fill="BLUE")
-        draw.text((4, 2), "Scale", font=_FONT_TITLE, fill="WHITE")
+        # Box fills the whole screen
+        PAD = 1
+        bx, by = PAD, PAD
+        bw, bh = W - 2 * PAD, H - 2 * PAD
 
-        # Total weight – centred
-        weight_str = f"{total:.1f} kg"
+        # Board outline
+        draw.rectangle((bx, by, bx + bw, by + bh), outline=(80, 80, 80))
+
+        # Cross-hair
+        cx = bx + bw // 2
+        cy = by + bh // 2
+        draw.line((bx + 1, cy, bx + bw - 1, cy), fill=(160, 160, 160), width=1)
+        draw.line((cx, by + 1, cx, by + bh - 1), fill=(160, 160, 160), width=1)
+
+        # Weight split across the vertical crosshair (slow-updated, 1 decimal).
+        # Integer part right-aligned left of cx; decimal digit left-aligned right of cx;
+        # dot drawn on the vertical line itself.
+        int_str = str(int(display_weight))
+        dec_str = str(round(display_weight % 1 * 10))  # single decimal digit
+        GAP = 4   # px gap between text and the crosshair line
         try:
-            bbox = _FONT_LARGE.getbbox(weight_str)
-            tw = bbox[2] - bbox[0]
+            ib = _FONT_LARGE.getbbox(int_str)
+            db = _FONT_LARGE.getbbox(dec_str)
+            db_dot = _FONT_LARGE.getbbox(".")
+            iw = ib[2] - ib[0];  ih = ib[3] - ib[1]
+            dw = db[2] - db[0]
+            dot_w = db_dot[2] - db_dot[0]
         except AttributeError:
-            tw = len(weight_str) * 10
-        draw.text(((W - tw) // 2, 16), weight_str, font=_FONT_LARGE, fill="WHITE")
-
-        # Balance visualisation box (78 × 78 centred horizontally)
-        BOX = 78
-        bx = (W - BOX) // 2   # left edge  → 25
-        by = 40                # top edge
-
-        # Board outline (dark grey rectangle)
-        draw.rectangle((bx, by, bx + BOX, by + BOX), outline=(80, 80, 80))
-
-        # Cross-hair lines through the centre
-        cx = bx + BOX // 2
-        cy = by + BOX // 2
-        draw.line((bx + 1, cy, bx + BOX - 1, cy), fill=(160, 160, 160), width=1)
-        draw.line((cx, by + 1, cx, by + BOX - 1), fill=(160, 160, 160), width=1)
+            iw = len(int_str) * 10;  ih = 20
+            dw = 10;  dot_w = 6
+        top_half_cy = by + bh // 4
+        text_y = top_half_cy - ih // 2
+        # Integer part: right edge at cx - GAP
+        draw.text((cx - GAP - iw, text_y), int_str, font=_FONT_LARGE, fill="WHITE")
+        # Decimal digit: left edge at cx + GAP
+        draw.text((cx + GAP, text_y), dec_str, font=_FONT_LARGE, fill="WHITE")
+        # Dot centred on the vertical line
+        draw.text((cx - dot_w // 2, text_y), ".", font=_FONT_LARGE, fill="WHITE")
 
         # Red balance dot – only when board is bearing weight
         if total > 1.0:
-            # x_off: +1 = all weight on right side, -1 = all weight on left side
-            # y_off: +1 = all weight on top/back,   -1 = all weight on front
             x_off = (tr + br - tl - bl) / total
             y_off = (tr + tl - br - bl) / total
-            radius = BOX // 2 - 7
-            ball_x = int(cx + x_off * radius)
-            ball_y = int(cy - y_off * radius)   # screen Y is inverted
+
+            BALANCE_SCALE = 2.0
+            x_off = max(-1.0, min(1.0, x_off * BALANCE_SCALE))
+            y_off = max(-1.0, min(1.0, y_off * BALANCE_SCALE))
+
             ball_r = 5
+            half_x = bw // 2 - ball_r - 2
+            half_y = bh // 2 - ball_r - 2
+            ball_x = int(cx + x_off * half_x)
+            ball_y = int(cy - y_off * half_y)  # screen Y is inverted
+            ball_x = max(bx + ball_r + 1, min(bx + bw - ball_r - 1, ball_x))
+            ball_y = max(by + ball_r + 1, min(by + bh - ball_r - 1, ball_y))
             draw.ellipse(
                 (ball_x - ball_r, ball_y - ball_r,
                  ball_x + ball_r, ball_y + ball_r),
                 fill="RED",
             )
-
-        # Footer
-        draw.text((4, H - 11), "K3: Back", font=_FONT_SMALL, fill=(80, 80, 255))
 
         lcd.LCD_ShowImage(image, 0, 0)
 
