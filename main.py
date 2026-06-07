@@ -11,12 +11,14 @@ from restart import action as restart_action
 from battery_status import action as battery_status_action
 from fifteen import action as fifteen_action
 from walking_pad import action as walking_pad_action
+from scale import action as scale_action
 
 # Register all actions here
 ACTIONS = [
     show_time_action,
     battery_status_action,
     walking_pad_action,
+    scale_action,
     fifteen_action,
     restart_action,
     shutdown_action,
