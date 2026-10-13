@@ -283,7 +283,7 @@ class WalkingPadAction(Action):
                     except Exception:
                         pass
 
-                while not exit_event.is_set():
+                while not exit_event.is_set() and client.is_connected:
                     try:
                         await client.write_gatt_char(WRITE_UUID, CMD_STATUS, response=False)
                     except Exception:
@@ -306,7 +306,17 @@ class WalkingPadAction(Action):
                         pass
 
                 key_task.cancel()
-                await client.stop_notify(NOTIFY_UUID)
+
+                if sync_task is not None:
+                    await asyncio.gather(sync_task, return_exceptions=True)
+                if status.raw is not None:
+                    await _sync(status)
+
+                if client.is_connected:
+                    await client.stop_notify(NOTIFY_UUID)
+                else:
+                    self._show_message(lcd, "Pad disconnected", "", "KEY3: back")
+                    self.wait_for_key3(lcd)
 
         except Exception as exc:
             self._show_message(lcd, "BLE Error", str(exc)[:20], "KEY3: back")
