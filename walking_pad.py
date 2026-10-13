@@ -17,6 +17,9 @@
 import os
 import asyncio
 import time
+import json
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from PIL import Image, ImageDraw, ImageFont
 from action import Action
 
@@ -65,6 +68,51 @@ def _make_speed_cmd(speed_kmh: float) -> bytes:
     param = round(max(0.0, speed_kmh) * 10)
     checksum = (0xa2 + 0x01 + param) % 256
     return bytes([0xf7, 0xa2, 0x01, param, checksum, 0xfd])
+
+# ---------------------------------------------------------------------------
+# Remote API
+# ---------------------------------------------------------------------------
+API_URL = "http://jk.sk:3030/api"
+API_AUTH = "Basic SnVybzpqazEyNzgxMg=="
+API_KEY = "91133b9d-6c3d-4048-9d76-dc2dff86354c"
+API_INTERVAL = 5.0  # seconds between updates
+
+
+def _api_request(method: str, path: str, body: dict):
+    req = urllib.request.Request(
+        API_URL + path,
+        data=json.dumps(body).encode(),
+        method=method,
+        headers={"Content-Type": "application/json", "Authorization": API_AUTH},
+    )
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read() or b"{}")
+
+
+def _status_values(status) -> dict:
+    return {
+        "time": f"{status.elapsed // 3600:02d}:{status.elapsed % 3600 // 60:02d}:{status.elapsed % 60:02d}",
+        "distance": status.distance,
+        "duration": status.elapsed,
+        "speed": status.speed,
+        "steps": status.steps,
+    }
+
+
+def _sync_entry(entry_id, status):
+    """Create the entry on first call, update it afterwards. Returns entry id."""
+    values = _status_values(status)
+    if entry_id is None:
+        start = datetime.now(timezone.utc) - timedelta(seconds=status.elapsed)
+        created = _api_request("POST", "/entry", {
+            "key": API_KEY,
+            "timestamp": start.strftime("%Y-%m-%dT%H:%M:%S.") + f"{start.microsecond // 1000:03d}Z",
+            "values": values,
+        })
+        return created.get("id") or created.get("_id")
+    _api_request("PUT", f"/entry/{entry_id}", {"values": values})
+    return entry_id
+
 
 # Device name fragments to match (case-insensitive)
 PAD_NAME_HINTS = ("walkingpad", "ks-", "walking pad", "treadmill")
@@ -224,6 +272,17 @@ class WalkingPadAction(Action):
 
                 key_task = asyncio.create_task(_watch_keys())
 
+                entry_id = None
+                last_sync = 0.0
+                sync_task = None
+
+                async def _sync(snapshot):
+                    nonlocal entry_id
+                    try:
+                        entry_id = await asyncio.to_thread(_sync_entry, entry_id, snapshot)
+                    except Exception:
+                        pass
+
                 while not exit_event.is_set():
                     try:
                         await client.write_gatt_char(WRITE_UUID, CMD_STATUS, response=False)
@@ -233,6 +292,12 @@ class WalkingPadAction(Action):
                     if status.raw is None:
                         self._show_waiting(lcd, pad_device.name or "WalkingPad")
                     else:
+                        now = time.monotonic()
+                        if now - last_sync >= API_INTERVAL and (sync_task is None or sync_task.done()):
+                            last_sync = now
+                            snapshot = PadStatus()
+                            snapshot.__dict__.update(status.__dict__)
+                            sync_task = asyncio.create_task(_sync(snapshot))
                         self._draw_status(lcd, draw, image, status, pad_device.name or "WalkingPad")
 
                     try:
